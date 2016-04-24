@@ -68,7 +68,7 @@ class FacebookBot
 		}
 		return false;
 	}
-	public function unsetWelcomeMessage($pageId)
+	public function deleteWelcomeMessage($pageId)
 	{
 		$url = "https://graph.facebook.com/v2.6/%s/thread_settings?access_token=%s";
 		$url = sprintf($url, $pageId, $this->getPageAccessToken());
@@ -76,26 +76,6 @@ class FacebookBot
 		$request->setting_type = "call_to_actions";
 		$request->thread_state = "new_thread";
 		$request->call_to_actions = [];
-		$response = self::executePost($url, $request, true);
-		if($response)
-		{
-			$responseObject = json_decode($response);
-			return is_object($responseObject) && isset($responseObject->result) && strpos($responseObject->result, 'Success') !== false;
-		}
-		return false;
-	}
-	public function deleteWelcomeMessage($pageId, $text)
-	{
-		$url = "https://graph.facebook.com/v2.6/%s/thread_settings?access_token=%s";
-		$url = sprintf($url, $pageId, $this->getPageAccessToken());
-		$request = new \stdClass();
-		$request->setting_type = "call_to_actions";
-		$request->thread_state = "new_thread";
-		$message = new stdClass();
-		$message->text = $text;
-		$item = new \stdClass();
-		$item->message = $message;
-		$request->call_to_actions = [$item];
 		$response = self::executePost($url, $request, true);
 		if($response)
 		{
