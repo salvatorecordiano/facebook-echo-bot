@@ -2,139 +2,93 @@
 
 class FacebookBot
 {
+    const BASE_URL = 'https://graph.facebook.com/v6.0';
 
-    const BASE_URL = 'https://graph.facebook.com/v2.6/';
+    /** @var string */
+    private $pageAccessToken;
+    /** @var array */
+    private $receivedMessages;
 
-    private $_validationToken;
-    private $_pageAccessToken;
-    private $_receivedMessages;
-
-    public function __construct($validationToken, $pageAccessToken)
+    public function __construct($pageAccessToken)
     {
-        $this->_validationToken = $validationToken;
-        $this->_pageAccessToken = $pageAccessToken;
-        $this->setupWebhook();
+        $this->pageAccessToken = $pageAccessToken;
+        $this->receivedMessages = array();
     }
 
     public function getReceivedMessages()
     {
-        return $this->_receivedMessages;
+        return $this->receivedMessages;
     }
 
     public function getPageAccessToken()
     {
-        return $this->_pageAccessToken;
-    }
-
-    public function getValidationToken()
-    {
-        return $this->_validationToken;
-    }
-
-    private function setupWebhook()
-    {
-        if (isset($_REQUEST['hub_challenge']) && isset($_REQUEST['hub_verify_token']) && $this->getValidationToken() == $_REQUEST['hub_verify_token']) {
-            echo $_REQUEST['hub_challenge'];
-            exit;
-        }
+        return $this->pageAccessToken;
     }
 
     public function sendTextMessage($recipientId, $text)
     {
-        $url = self::BASE_URL . "me/messages?access_token=%s";
-        $url = sprintf($url, $this->getPageAccessToken());
-        $recipient = new \stdClass();
-        $recipient->id = $recipientId;
-        $message = new \stdClass();
-        $message->text = $text;
-        $parameters = ['recipient' => $recipient, 'message' => $message];
-        $response = self::executePost($url, $parameters, true);
-        if ($response) {
-            $responseObject = json_decode($response);
-            return is_object($responseObject) && isset($responseObject->recipient_id) && isset($responseObject->message_id);
-        }
-        return false;
-    }
+        $url = \sprintf('%s/me/messages?access_token=%s', self::BASE_URL, $this->getPageAccessToken());
+        $parameters = array(
+            'recipient' => array('id' => $recipientId),
+            'message' => array('text' => $text)
+        );
+        $response = self::executePost($url, $parameters);
 
-    public function setWelcomeMessage($pageId, $text)
-    {
-        $url = self::BASE_URL . "%s/thread_settings?access_token=%s";
-        $url = sprintf($url, $pageId, $this->getPageAccessToken());
-        $request = new \stdClass();
-        $request->setting_type = "greeting";
-        $greeting = new stdClass();
-        $greeting->text = $text;
-        $request->greeting = $greeting;
-        $response = self::executePost($url, $request, true);
-        if ($response) {
-            $responseObject = json_decode($response);
-            return is_object($responseObject) && isset($responseObject->result) && strpos($responseObject->result, 'Success') !== false;
+        if(empty($response)) {
+
+            return false;
         }
-        return false;
+
+        $responseObject = \json_decode($response, true);
+        return isset($responseObject['recipient_id'])
+            && isset($responseObject['message_id']);
     }
 
     public function run()
     {
         $request = self::getJsonRequest();
-        if (!$request) return;
-        $entries = isset($request->entry) ? $request->entry : null;
-        if (!$entries) return;
-        $messages = [];
-        foreach ($entries as $entry) {
-            $messagingList = isset($entry->messaging) ? $entry->messaging : null;
-            if (!$messagingList) continue;
-            foreach ($messagingList as $messaging) {
-                $message = new \stdClass();
-                $message->entryId = isset($entry->id) ? $entry->id : null;
-                $message->senderId = isset($messaging->sender->id) ? $messaging->sender->id : null;
-                $message->recipientId = isset($messaging->recipient->id) ? $messaging->recipient->id : null;
-                $message->timestamp = isset($messaging->timestamp) ? $messaging->timestamp : null;
-                $message->messageId = isset($messaging->message->mid) ? $messaging->message->mid : null;
-                $message->sequenceNumber = isset($messaging->message->seq) ? $messaging->message->seq : null;
-                $message->text = isset($messaging->message->text) ? $messaging->message->text : null;
-                $message->attachments = isset($messaging->message->attachments) ? $messaging->message->attachments : null;
-                $messages[] = $message;
+
+        if(empty($request)) {
+            return;
+        }
+
+        if(!isset($request['entry'])) {
+            return;
+        }
+
+        foreach ($request['entry'] as $entry) {
+            foreach ($entry['messaging'] as $messaging) {
+                $this->receivedMessages[] = array(
+                    'senderId' => isset($messaging['sender']['id']) ? $messaging['sender']['id'] : null,
+                    'text' => isset($messaging['message']['text']) ? $messaging['message']['text'] : null,
+                    'attachments' => isset($messaging['message']['attachments']) ? $messaging['message']['attachments'] : null
+                );
             }
         }
-        $this->_receivedMessages = $messages;
-    }
-
-    public function subscribeAppToThePage()
-    {
-        $url = self::BASE_URL . "me/subscribed_apps";
-        $parameters = ['access_token' => $this->getPageAccessToken()];
-        $response = self::executePost($url, $parameters);
-        if ($response) {
-            $responseObject = json_decode($response);
-            return is_object($responseObject) && isset($responseObject->success) && $responseObject->success == "true";
-        }
-        return false;
     }
 
     private static function getJsonRequest()
     {
-        $content = file_get_contents("php://input");
-        return json_decode($content, false, 512, JSON_BIGINT_AS_STRING);
+        return \json_decode(
+            \file_get_contents('php://input'),
+            true,
+            512,
+            JSON_BIGINT_AS_STRING
+        );
     }
 
-    private static function executePost($url, $parameters, $json = false)
+    private static function executePost($url, $parameters)
     {
-        $ch = curl_init();
-        curl_setopt($ch, CURLOPT_URL, $url);
-        if ($json) {
-            $data = json_encode($parameters);
-            curl_setopt($ch, CURLOPT_CUSTOMREQUEST, "POST");
-            curl_setopt($ch, CURLOPT_POSTFIELDS, $data);
-            curl_setopt($ch, CURLOPT_HTTPHEADER, array('Content-Type: application/json', 'Content-Length: ' . strlen($data)));
-        } else {
-            curl_setopt($ch, CURLOPT_POST, count($parameters));
-            curl_setopt($ch, CURLOPT_POSTFIELDS, http_build_query($parameters));
-        }
-        curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
-        curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, false);
-        curl_setopt($ch, CURLOPT_SSL_VERIFYHOST, false);
-        $response = curl_exec($ch);
-        curl_close($ch);
+        $ch = \curl_init();
+        \curl_setopt($ch, CURLOPT_URL, $url);
+        $data = \json_encode($parameters);
+        \curl_setopt($ch, CURLOPT_CUSTOMREQUEST, 'POST');
+        \curl_setopt($ch, CURLOPT_POSTFIELDS, $data);
+        \curl_setopt($ch, CURLOPT_HTTPHEADER, array('Content-Type: application/json'));
+        \curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+        $response = \curl_exec($ch);
+        \curl_close($ch);
+
         return $response;
     }
 }

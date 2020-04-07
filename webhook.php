@@ -1,18 +1,24 @@
 <?php
-require_once 'config.php';
-require_once 'FacebookBot.php';
-$bot = new FacebookBot(FACEBOOK_VALIDATION_TOKEN, FACEBOOK_PAGE_ACCESS_TOKEN);
+require_once __DIR__ . '/config.php';
+require_once __DIR__ . '/FacebookBot.php';
+
+if (isset($_REQUEST['hub_challenge'])
+    && isset($_REQUEST['hub_verify_token'])
+    && FACEBOOK_VALIDATION_TOKEN === $_REQUEST['hub_verify_token']
+) {
+    echo $_REQUEST['hub_challenge'];
+    die;
+}
+
+$bot = new FacebookBot(FACEBOOK_PAGE_ACCESS_TOKEN);
 $bot->run();
-$messages = $bot->getReceivedMessages();
-foreach ($messages as $message)
+
+foreach ($bot->getReceivedMessages() as $message)
 {
-	$recipientId = $message->senderId;
-	if($message->text)
-	{
-		$bot->sendTextMessage($recipientId, $message->text);
-	}
-	elseif($message->attachments)
-	{
-		$bot->sendTextMessage($recipientId, "Attachment received");
+	$recipientId = $message['senderId'];
+	if($message['text']) {
+		$bot->sendTextMessage($recipientId, $message['text']);
+	} else {
+		$bot->sendTextMessage($recipientId, 'Attachment received');
 	}
 }
